@@ -236,6 +236,7 @@ module Controller(
 
     // output combinational circuit
     assign seed = clk_count;
+    assign decision = cur_state == set_psw_mode;
     assign shuffle_init = output_state == shuffle_init_output;
     assign mem_rst = output_state == mem_rst_output;
     assign buff_rst = output_state == buff_rst_output;
