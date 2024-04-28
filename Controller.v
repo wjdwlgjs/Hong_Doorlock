@@ -99,7 +99,7 @@ module Controller(
                     if (shuffle_released) begin // shuffle == 1, others: x
                         cur_state <= shuffle_mode;
                         prev_state <= cur_state;
-                        // It is recommended that we always use '<='(non-blocking) instead of '='(blocking) when pushing values into regs
+                        // It is recommended that we always use '<='(non-blocking) instead of '='(blocking) when making sequential logic circuits
                         // these two lines will result in cur_state == shuffle_mode, prev_state == set_psw_mode, which is what we expect.
                         // If we use blocking statements like these:
                         //     cur_state = shuffle_mode;
