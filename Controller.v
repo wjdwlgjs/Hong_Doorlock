@@ -18,15 +18,16 @@
 //                            |    ____________________|                    |
 //                            |   |                    | cur, prev          |
 //                        ____v___v________      ______|_____      _________v_______
-//     confirm_released->|                 |    |            |    |                 |
-//     shuffle_released->|  next state     |    |  mode      |    |                 |---> decision
-//     same------------->|  combinational  |    |  state     |    |  output         |---> shuffle_init
-//     master_same------>|  circuit        |--->|  register  |--->|  combinational  |---> mem_rst
-//     input_valid------>|                 |    | (cur, prev,|    |  circuit        |---> buff_rst
-//     buff_limit------->|                 |    |  output)   |    |                 |---> buff_sl
+//     confirm_released->|                 |    |  state     |    |                 |
+//     shuffle_released->|  next state     |    |  register  |    |                 |---> decision
+//     same------------->|  combinational  |    | (cur, prev,|    |  output         |---> shuffle_init
+//     master_same------>|  circuit        |--->| output,    |--->|  combinational  |---> mem_rst
+//     input_valid------>|                 |    | err_num)   |    |  circuit        |---> buff_rst
+//     buff_limit------->|                 |    |            |    |                 |---> buff_sl
 //     mem_limit-------->|_________________|    |____________|    |_________________|---> mem_sl
-//                                                        |            
-//                                                        |clk, rstn         
+//                                                       |            
+//                                                       |~clk, rstn         
+
 
 `include "button_release_detector.v"
 
@@ -38,7 +39,6 @@ module Controller(
     input same, 
     input master_same,
     input input_valid, 
-    input error_num, 
     input buff_limit,
     input mem_limit,
 
@@ -78,7 +78,6 @@ module Controller(
         .same(same),
         .master_same(master_same),
         .input_valid(input_valid),
-        .error_num(error_num),
         .buff_limit(buff_limit),
         .mem_limit(mem_limit),
         .clk_count(clk_count),
@@ -121,7 +120,6 @@ module ControllerStateManager( // next state comb circuit + state register
     input same, 
     input master_same,
     input input_valid, 
-    input error_num, 
     input buff_limit,
     input mem_limit,
     input [31:0] clk_count,
@@ -131,6 +129,7 @@ module ControllerStateManager( // next state comb circuit + state register
     ); 
 
     reg [2:0] prev_state;
+    reg [3:0] error_num;
 
     localparam [2:0] noop_mode = 3'b000;
     localparam [2:0] set_psw_mode = 3'b001;
@@ -147,6 +146,8 @@ module ControllerStateManager( // next state comb circuit + state register
     localparam [2:0] mem_sl_output = 3'b100;
     localparam [2:0] buff_sl_output = 3'b101;
 
+    localparam [3:0] error_limit = 4'b1010;
+
     always @(negedge clk or negedge rstn) begin 
         if (~rstn) cur_state <= noop_mode; 
         else begin
@@ -155,6 +156,7 @@ module ControllerStateManager( // next state comb circuit + state register
                     cur_state <= set_psw_mode;
                     prev_state <= set_psw_mode;
                     output_state <= mem_rst_output;
+                    error_num <= 4'b0000;
                 end
 
                 set_psw_mode: begin
@@ -170,6 +172,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         // we get a result of cur_state == shuffle_mode, prev_state == shuffle_mode.
                         // Not only is this far from what we expect, it is more difficult to realize, because this isn't a software in which we have our 'variable's stored in RAMs. 
                         output_state <= shuffle_init_output;
+                        error_num <= 4'b0000;
                     end
 
                     else if (confirm_released) begin // shuffle == 0, confirm_released == 1, others: x (confirm_released has more priority than input_valid)
@@ -177,6 +180,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= confirm_psw_mode;
                         prev_state <= cur_state;
                         output_state <= buff_rst_output;
+                        error_num <= 4'b0000;
                     end
 
                     else begin // shuffle == 0, confirm_released == 0, others: x
@@ -184,6 +188,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= cur_state;
                         prev_state <= prev_state;
                         output_state <= {input_valid & ~mem_limit, input_valid & mem_limit, 1'b0};
+                        error_num <= 4'b0000;
                     end
                 end
 
@@ -193,6 +198,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= shuffle_mode;
                         prev_state <= cur_state;
                         output_state <= shuffle_init_output;
+                        error_num <= 4'b0000;
                     end
 
                     else if (confirm_released) begin // shuffle_released == 0, confirm_released == 1, others: x
@@ -201,12 +207,14 @@ module ControllerStateManager( // next state comb circuit + state register
                             cur_state <= locked_mode;
                             prev_state <= cur_state;
                             output_state <= allzero_outputs;
+                            error_num <= 4'b0000;
                         end
                         else begin // shuffle_released == 0, confirm_released == 1, same == 0, others: x
                             // transition to set_psw mode, reset memory
                             cur_state <= set_psw_mode;
                             prev_state <= cur_state;
                             output_state <= mem_rst_output;
+                            error_num <= 4'b0000;
                         end
                     end
 
@@ -215,6 +223,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= cur_state;
                         prev_state <= prev_state;
                         output_state <= {input_valid & ~buff_limit, input_valid & buff_limit, 1'b1};
+                        error_num <= 4'b0000;
                     end
                 end
 
@@ -224,12 +233,14 @@ module ControllerStateManager( // next state comb circuit + state register
                         prev_state <= cur_state;
                         cur_state <= prev_state;
                         output_state <= allzero_outputs;
+                        error_num <= error_num;
                     end
                     else begin // clk_count != 0, others: x
                         // stay in current(shuffle) mode, no output
                         prev_state <= prev_state;
                         cur_state <= cur_state;
                         output_state <= allzero_outputs;
+                        error_num <= error_num;
                     end
                 end
 
@@ -239,12 +250,14 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= challenge_mode;
                         prev_state <= cur_state;
                         output_state <= buff_rst_output;
+                        error_num <= error_num;
                     end
                     else begin // confirm_released == 0, others: x
                         // stay in current (locked) mode, no output
                         cur_state <= cur_state;
                         prev_state <= prev_state;
                         output_state <= allzero_outputs;
+                        error_num <= error_num;
                     end
                 end
 
@@ -254,19 +267,23 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= shuffle_mode;
                         prev_state <= cur_state;
                         output_state <= shuffle_init_output;
+                        error_num <= error_num;
                     end
                     else if (confirm_released) begin // shuffle_released == 0, confirm_released == 1, others: x
-                        if ((same & (error_num < 4'b1010)) | master_same) begin 
+                        if ((same & (error_num != error_limit)) | master_same) begin 
                             // transition to unlocked mode, no output
                             cur_state <= unlocked_mode;
                             prev_state <= cur_state;
                             output_state <= allzero_outputs;
+                            error_num <= 4'b0000;
                         end
                         else begin
                             // transition to locked mode, no output
                             cur_state <= locked_mode;
                             prev_state <= cur_state;
                             output_state <= allzero_outputs;
+                            if (error_num == error_limit) error_num <= error_num;
+                            else error_num <= error_num + 1;
                         end
                     end
                     else if (input_valid) begin // shuffle_released == 0, confirm_released == 0, input_valid == 1, others: x
@@ -275,12 +292,15 @@ module ControllerStateManager( // next state comb circuit + state register
                             cur_state <= locked_mode;
                             prev_state <= cur_state;
                             output_state <= allzero_outputs;
+                            if (error_num == error_limit) error_num <= error_num;
+                            else error_num <= error_num + 1;
                         end
                         else begin // shuffle_released == 0, confirm_released == 0, input_valid == 1, limit == 0, others: x
                             // stay in current (challenge) mode, shift left buffer
                             cur_state <= cur_state;
                             prev_state <= prev_state;
                             output_state <= buff_sl_output;
+                            error_num <= error_num;
                         end
                     end
                     else begin // shuffle_released == 0, confirm_released == 0, input_valid == 0, others: x
@@ -288,6 +308,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= cur_state;
                         prev_state <= prev_state;
                         output_state <= allzero_outputs;
+                        error_num <= error_num;
                     end
                 end
                 unlocked_mode: begin
@@ -297,12 +318,14 @@ module ControllerStateManager( // next state comb circuit + state register
                             cur_state <= locked_mode;
                             prev_state <= cur_state;
                             output_state <= allzero_outputs;
+                            error_num <= 4'b0000;
                         end
                         else begin // confirm_released == 0, clk_count > 3seconds, others: x
                             // transition to set_psw mode, reset memory
                             cur_state <= set_psw_mode;
                             prev_state <= cur_state;
                             output_state <= mem_rst_output;
+                            error_num <= 4'b0000;
                         end
                     end
                     else begin
@@ -310,6 +333,7 @@ module ControllerStateManager( // next state comb circuit + state register
                         cur_state <= cur_state;
                         prev_state <= prev_state;
                         output_state <= allzero_outputs;
+                        error_num <= 4'b0000;
                     end
                 end
             endcase
@@ -337,7 +361,7 @@ module ControllerClkCounter(
     localparam [2:0] challenge_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
-    always @(negedge clk or negedge rstn) begin
+    always @(posedge clk or negedge rstn) begin
         if (~rstn) clk_count <= 32'b0;
         else begin
             case (cur_state) 
