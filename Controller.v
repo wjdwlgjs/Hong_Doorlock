@@ -11,14 +11,14 @@
 //                                                               |
 //                                                               |
 //                             __________________________________|__________
-//                            |                                             |-----------> seed
+//                            |                                             |
 //                            |              cur_state                      |
 //                            |              to counter enable circuit      |
 //                            |                        ^                    |
 //                            |    ____________________|                    |
 //                            |   |                    | cur, prev          |
 //                        ____v___v________      ______|_____      _________v_______
-//     confirm_released->|                 |    |  state     |    |                 |
+//     confirm_released->|                 |    |  state     |    |                 |---> seed
 //     shuffle_released->|  next state     |    |  register  |    |                 |---> decision
 //     same------------->|  combinational  |    | (cur, prev,|    |  output         |---> shuffle_init
 //     master_same------>|  circuit        |--->| output,    |--->|  combinational  |---> mem_rst
@@ -149,12 +149,17 @@ module ControllerStateManager( // next state comb circuit + state register
     localparam [3:0] error_limit = 4'b1010;
 
     always @(negedge clk or negedge rstn) begin 
-        if (~rstn) cur_state <= noop_mode; 
+        if (~rstn) begin
+            cur_state <= noop_mode;
+            prev_state <= noop_mode;
+            output_state <= allzero_outputs;
+            error_num <= 4'b000;
+        end
         else begin
             case(cur_state)
                 noop_mode: begin
                     cur_state <= set_psw_mode;
-                    prev_state <= set_psw_mode;
+                    prev_state <= cur_state;
                     output_state <= mem_rst_output;
                     error_num <= 4'b0000;
                 end
@@ -202,6 +207,7 @@ module ControllerStateManager( // next state comb circuit + state register
                     end
 
                     else if (confirm_released) begin // shuffle_released == 0, confirm_released == 1, others: x
+                        // confirm_released has higher priority than input_valid 
                         if (same) begin // shuffle_released == 0, confirm_released == 1, same == 1, others: x
                             // transition to locked mode, no output
                             cur_state <= locked_mode;
