@@ -1,47 +1,29 @@
-module RandomShuffler(
-    input clk,
-    input shuffle_init,
-    input [31:0] seed,
-    input [3:0] limit,
-    input rstn,
+module PRNG(
+    input clk_i,
+    input [31:0] seed_i,
+    input collect_seed_i,
+    input [3:0] modular_i,
+    input nreset_i,
     
-    output [3:0] prn4
+    output [3:0] prn4_o
     );
 
     wire [31:0] prn32;
 
     XorShift32 XorShiftInst(
-        .seed_i(seed),
-        .collect_seed_i(shuffle_init),
-        .clk_i(clk),
-        .nreset_i(rstn),
+        .seed_i(seed_i),
+        .collect_seed_i(collect_seed_i),
+        .clk_i(clk_i),
+        .nreset_i(nreset_i),
 
         .prn_o(prn32)
     );
 
-    reg [3:0] limit_plusone;
-
-    always @(*) begin
-        case(limit)
-            4'b0: limit_plusone <= 4'b1;
-            4'b1: limit_plusone <= 4'b10;
-            4'b10: limit_plusone <= 4'b11;
-            4'b11: limit_plusone <= 4'b100;
-            4'b100: limit_plusone <= 4'b101;
-            4'b101: limit_plusone <= 4'b110;
-            4'b110: limit_plusone <= 4'b111;
-            4'b111: limit_plusone <= 4'b1000;
-            4'b1000: limit_plusone <= 4'b1001;
-            4'b1001: limit_plusone <= 4'b1010;
-            default: limit_plusone <= 4'b0001;
-        endcase
-    end
-
     Modulo32to4Bit RemainderCalculator(
         .target_i(prn32),
-        .modular_i(limit_plusone),
+        .modular_i(modular_i),
 
-        .result_o(prn4)
+        .result_o(prn4_o)
     );
 
 endmodule

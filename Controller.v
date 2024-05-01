@@ -13,22 +13,18 @@ module ControlUnit(
     input clk_i,
     input nreset_i,
 
-    output [31:0] seed_o,
+    output [31:0] clk_count_o,
     output shuffle_init_o,
-    output mem_rst_o,
-    output mem_sl_o,
-    output buff_rst_o,
-    output buff_sl_o
-);
+    output write_to_mem_o, // former 'decision' write to buffer if 0
+    output input_rst_o,
+    output input_sl_o
+    );
 
     wire [2:0] cur_state, next_state;
     wire [2:0] cur_additional_state, next_additional_state;
     wire [3:0] cur_error_num, next_error_num;
     
     wire confirm_released, shuffle_released;
-    wire write_to_mem;
-
-    wire [31:0] clk_count;
     wire count_en, count_rst;
 
     button_release_detector ConfirmDetector(
@@ -52,7 +48,7 @@ module ControlUnit(
         .master_same_i(master_same_i), 
         .input_valid_i(input_valid_i),
         .limit_i(mem_limit_i & write_to_mem | buff_limit_i & write_to_buff),
-        .clk_count_i(clk_count),
+        .clk_count_i(clk_count_o),
 
         .cur_state_i(cur_state),
         .cur_additional_state_i(cur_additional_state),
@@ -79,14 +75,12 @@ module ControlUnit(
     OutputComb OutputCombUnit(
         .state_i(cur_state),
         .additional_state_i(cur_additional_state),
-        .clk_count_i(clk_count),
+        .clk_count_i(clk_count_o),
 
-        .seed_o(seed_o), 
         .shuffle_init_o(shuffle_init_o),
-        .mem_rst_o(mem_rst_o),
-        .mem_sl_o(mem_sl_o),
-        .buff_rst_o(buff_rst_o),
-        .buff_sl_o(buff_sl_o)
+        .write_to_mem_o(write_to_mem_o),
+        .input_rst_o(input_rst_o),
+        .input_sl_o(input_sl_o)
     );
 
     ClkCounterEnableComb CounterEnCombUnit(
@@ -100,7 +94,7 @@ module ControlUnit(
     );
 
     ClkCounter CounterUnit(
-        .clk_num(clk_count),
+        .clk_num(clk_count_o),
         .clk(clk_i),
         .enable(count_en),
         .clk_num_rst(count_rst),
@@ -321,16 +315,12 @@ module OutputComb(
     input [2:0] additional_state_i,
     input [31:0] clk_count_i,
 
-    output [31:0] seed_o, 
     output shuffle_init_o,
-    output mem_rst_o,
-    output mem_sl_o,
-    output buff_rst_o,
-    output buff_sl_o
+    output write_to_mem_o,
+    output input_rst_o,
+    output input_sl_o
 
     );
-
-    wire write_to_mem, write_to_buff;
 
     localparam [2:0] noop_mode = 3'b000;
     localparam [2:0] set_psw_mode = 3'b001;
@@ -340,15 +330,12 @@ module OutputComb(
     localparam [2:0] locked_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
-    assign write_to_mem = state_i == set_psw_mode;
-    assign write_to_buff = state_i[2:1] == 2'b01; // state_i == confirm_psw_mode | state_i == challenge_mode
+    wire write_input;
+    assign write_to_mem_o = (state_i == set_psw_mode);
+    assign write_input = write_to_mem_o & (state_i[2:1] == 2'b01);
 
-    assign seed_o = clk_count_i;
-    assign shuffle_init_o = (state_i == shuffle_mode) & additional_state_i[2];
-    assign mem_rst_o = write_to_mem & additional_state_i[1];
-    assign mem_sl_o = write_to_mem & additional_state_i[0];
-    assign buff_rst_o = write_to_buff & additional_state_i[1];
-    assign buff_sl_o = write_to_buff & additional_state_i[0];
+    assign input_rst_o = additional_state_i[1] & write_input;
+    assign input_sl_o = additional_state_i[0] & write_input;
 
 endmodule
     
@@ -399,7 +386,7 @@ module ClkCounter(/*AUTOARG*/ // former 'clk_control'
     always @(posedge clk or negedge rstn) begin
         if (~rstn) clk_num <= 32'b0; // priority: rstn > clk_num_rst > enable
         else if (clk_num_rst) clk_num <= 32'b0;
-        else if (enable) clk_num <= clk_num + 1;
+        else if (enable & clk_num != 32'hffffffff) clk_num <= clk_num + 1;
         else clk_num <= clk_num;
     end
 
