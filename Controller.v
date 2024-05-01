@@ -1,430 +1,408 @@
-// We can expect the hardware to look something like this:
-//                        _________________      ___________
-//                       |                 |    |           |        
-//                       |  counter        |    |           |
-//     cur_state-------->|  enable/reset   |----|  clk      |____
-//     confirm_in------->|  combinational  |----|  counter  |    |
-//     shuffle_in------->|  circuit        |    |           |    |
-//                       |_________________|    |___________|    | clk_count   
-//                                                     |         |
-//                                            clk, rstn|         |
-//                                                               |
-//                                                               |
-//                             __________________________________|__________
-//                            |                                             |
-//                            |              cur_state                      |
-//                            |              to counter enable circuit      |
-//                            |                        ^                    |
-//                            |    ____________________|                    |
-//                            |   |                    | cur, prev          |
-//                        ____v___v________      ______|_____      _________v_______
-//     confirm_released->|                 |    |  state     |    |                 |---> seed
-//     shuffle_released->|  next state     |    |  register  |    |                 |---> decision
-//     same------------->|  combinational  |    | (cur, prev,|    |  output         |---> shuffle_init
-//     master_same------>|  circuit        |--->| output,    |--->|  combinational  |---> mem_rst
-//     input_valid------>|                 |    | err_num)   |    |  circuit        |---> buff_rst
-//     buff_limit------->|                 |    |            |    |                 |---> buff_sl
-//     mem_limit-------->|_________________|    |____________|    |_________________|---> mem_sl
-//                                                       |            
-//                                                       |~clk, rstn         
-
-
 `include "button_release_detector.v"
+`include "clk_control.v"
 
-module Controller(
-    input clk, 
-    input rstn, 
-    input confirm_in, 
-    input shuffle_in, 
-    input same, 
-    input master_same,
-    input input_valid, 
-    input buff_limit,
-    input mem_limit,
+module ControlUnit(
+    input confirm_i,
+    input shuffle_i,
+    input same_i,
+    input master_same_i,
+    input input_valid_i,
+    input buff_limit_i,
+    input mem_limit_i,
 
-    output shuffle_init, 
-    output [31:0] seed, 
-    output decision, 
-    output mem_sl, 
-    output buff_sl, 
-    output mem_rst,
-    output buff_rst
-    );
+    input clk_i,
+    input nreset_i,
 
-    wire [2:0] cur_state;
-    wire [2:0] output_state;
-    wire [31:0] clk_count;
+    output [31:0] seed_o,
+    output shuffle_init_o,
+    output mem_rst_o,
+    output mem_sl_o,
+    output buff_rst_o,
+    output buff_sl_o
+);
 
+    wire [2:0] cur_state, next_state;
+    wire [2:0] cur_additional_state, next_additional_state;
+    wire [3:0] cur_error_num, next_error_num;
+    
     wire confirm_released, shuffle_released;
+    wire write_to_mem;
+
+    wire [31:0] clk_count;
+    wire count_en, count_rst;
 
     button_release_detector ConfirmDetector(
-        .clk(clk),
-        .rstn(rstn),
-        .in(confirm_in),
-        .out(confirm_released)
+        .out(confirm_released),
+        .clk(clk_i),
+        .in(confirm_i),
+        .rstn(nreset_i)
     );
+
     button_release_detector ShuffleDetector(
-        .clk(clk),
-        .rstn(rstn),
-        .in(shuffle_in),
-        .out(shuffle_released)
+        .out(shuffle_released),
+        .clk(clk_i),
+        .in(shuffle_i),
+        .rstn(nreset_i)
     );
 
-    ControllerStateManager StateManager(
-        .clk(clk),
-        .rstn(rstn),
-        .confirm_released(confirm_released),
-        .shuffle_released(shuffle_released),
-        .same(same),
-        .master_same(master_same),
-        .input_valid(input_valid),
-        .buff_limit(buff_limit),
-        .mem_limit(mem_limit),
-        .clk_count(clk_count),
+    NextStateComb NextStateCombUnit(
+        .confirm_released_i(confirm_released),
+        .shuffle_released_i(shuffle_released),
+        .same_i(same_i),
+        .master_same_i(master_same_i), 
+        .input_valid_i(input_valid_i),
+        .limit_i(mem_limit_i & write_to_mem | buff_limit_i & write_to_buff),
+        .clk_count_i(clk_count),
 
-        .cur_state(cur_state),
-        .output_state(output_state)
+        .cur_state_i(cur_state),
+        .cur_additional_state_i(cur_additional_state),
+        .cur_error_num_i(cur_error_num),
+        
+        .next_state_o(next_state),
+        .next_additional_state_o(next_additional_state), 
+        .next_error_num_o(next_error_num)
     );
 
-    ControllerClkCounter ClkCounter(
-        .clk(clk),
-        .rstn(rstn),
-        .cur_state(cur_state),
-        .shuffle_in(shuffle_in),
-        .confirm_in(confirm_in),
+    CurStateRegisters States(
+        .next_state_i(next_state),
+        .next_additional_state_i(next_additional_state),
+        .next_error_num_i(next_error_num),
+        
+        .clk_i(clk_i),
+        .nreset_i(nreset_i),
 
-        .clk_count(clk_count)
+        .state_o(cur_state),
+        .additional_state_o(cur_additional_state),
+        .error_num_o(cur_error_num)
     );
 
-    ControllerOutputDecoder OutputDecoder(
-        .output_state(output_state),
-        .clk_count(clk_count),
-        .cur_state(cur_state),
-        .shuffle_init(shuffle_init),
-        .seed(seed),
-        .decision(decision),
-        .mem_sl(mem_sl),
-        .buff_sl(buff_sl),
-        .mem_rst(mem_rst),
-        .buff_rst(buff_rst)
+    OutputComb OutputCombUnit(
+        .state_i(cur_state),
+        .additional_state_i(cur_additional_state),
+        .clk_count_i(clk_count),
+
+        .seed_o(seed_o), 
+        .shuffle_init_o(shuffle_init_o),
+        .mem_rst_o(mem_rst_o),
+        .mem_sl_o(mem_sl_o),
+        .buff_rst_o(buff_rst_o),
+        .buff_sl_o(buff_sl_o)
     );
-    
+
+    ClkCounterEnableComb CounterEnCombUnit(
+        .state_i(cur_state),
+        .additional_state_i(cur_additional_state),
+        .confirm_in_i(confirm_i),
+        .shuffle_in_i(shuffle_i),
+
+        .count_en_o(count_en),
+        .count_rst_o(count_rst)
+    );
+
+    ClkCounter CounterUnit(
+        .clk_num(clk_count),
+        .clk(clk_i),
+        .enable(count_en),
+        .clk_num_rst(count_rst),
+        .rstn(nreset_i)
+    );
+
 endmodule
 
+module NextStateComb(
+    // seperating the comb circuit and state register makes simulation easier
+    input confirm_released_i,
+    input shuffle_released_i,
+    input same_i,
+    input master_same_i, 
+    input input_valid_i,
+    input limit_i,
+    input [31:0] clk_count_i,
 
-module ControllerStateManager( // next state comb circuit + state register
-    input clk, 
-    input rstn, 
-    input confirm_released,
-    input shuffle_released,
-    input same, 
-    input master_same,
-    input input_valid, 
-    input buff_limit,
-    input mem_limit,
-    input [31:0] clk_count,
-
-    output reg [2:0] cur_state,
-    output reg [2:0] output_state
-    ); 
-
-    reg [2:0] prev_state;
-    reg [3:0] error_num;
+    input [2:0] cur_state_i,
+    input [2:0] cur_additional_state_i,
+    input [3:0] cur_error_num_i,
+    
+    output reg [2:0] next_state_o,
+    output reg [2:0] next_additional_state_o, // [2] means whether state transition just happened or not. 
+    // [1:0] means which of set_psw, confirm_psw, challenge the previous state was in shuffle_mode. [0] means to shift left, [1] means to reset the selected buff/mem in confirm_psw, challenge, set_psw mode
+    // this is some sort of minimizing the number of flip-flops, which can lead to minimizing power consumption
+    output reg [3:0] next_error_num_o
+    );    
 
     localparam [2:0] noop_mode = 3'b000;
     localparam [2:0] set_psw_mode = 3'b001;
     localparam [2:0] confirm_psw_mode = 3'b010;
-    localparam [2:0] shuffle_mode = 3'b011;
-    localparam [2:0] locked_mode = 3'b100;
-    localparam [2:0] challenge_mode = 3'b101;
+    localparam [2:0] challenge_mode = 3'b011;
+    localparam [2:0] shuffle_mode = 3'b100;
+    localparam [2:0] locked_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
-    localparam [2:0] allzero_outputs = 3'b000;
-    localparam [2:0] shuffle_init_output = 3'b111;
-    localparam [2:0] mem_rst_output = 3'b010;
-    localparam [2:0] buff_rst_output = 3'b011;
-    localparam [2:0] mem_sl_output = 3'b100;
-    localparam [2:0] buff_sl_output = 3'b101;
-
-    localparam [3:0] error_limit = 4'b1010;
-
-    always @(negedge clk or negedge rstn) begin 
-        if (~rstn) begin
-            cur_state <= noop_mode;
-            prev_state <= noop_mode;
-            output_state <= allzero_outputs;
-            error_num <= 4'b000;
-        end
-        else begin
-            case(cur_state)
-                noop_mode: begin
-                    cur_state <= set_psw_mode;
-                    prev_state <= cur_state;
-                    output_state <= mem_rst_output;
-                    error_num <= 4'b0000;
+    always @(*) begin
+        case(next_state_o) 
+            noop_mode: begin
+                next_state_o = set_psw_mode;
+                next_additional_state_o = 3'b100;
+                next_error_num_o = 3'b000;
+            end
+            set_psw_mode: begin
+                if (shuffle_released_i) begin
+                    next_state_o = shuffle_mode;
+                    next_additional_state_o = {1'b1, set_psw_mode[1:0]};
+                    next_error_num_o = 3'b000;
                 end
-
-                set_psw_mode: begin
-                    if (shuffle_released) begin // shuffle == 1, others: x
-                        // transition to shuffle mode, shuffle_init
-                        cur_state <= shuffle_mode;
-                        prev_state <= cur_state;
-                        // It is recommended that we always use '<='(non-blocking) instead of '='(blocking) when making sequential logic circuits
-                        // these two lines will result in cur_state == shuffle_mode, prev_state == set_psw_mode, which is what we expect.
-                        // If we use blocking statements like these:
-                        //     cur_state = shuffle_mode;
-                        //     prev_state = cur_state;
-                        // we get a result of cur_state == shuffle_mode, prev_state == shuffle_mode.
-                        // Not only is this far from what we expect, it is more difficult to realize, because this isn't a software in which we have our 'variable's stored in RAMs. 
-                        output_state <= shuffle_init_output;
-                        error_num <= 4'b0000;
+                else if (confirm_released_i) begin // shuffle_released == 0 & confirm_released == 1. transition to confirm_psw_mode
+                    next_state_o = confirm_psw_mode;
+                    next_additional_state_o = 3'b110; // reset buffer
+                    next_error_num_o = 3'b000;
+                end
+                else begin // shuffle_released == 0, confirm_released  == 0, reset mem if i.v. & limit, sl mem if i.v. & ~limit
+                    next_state_o = set_psw_mode;
+                    next_additional_state_o = {1'b0, limit_i & input_valid_i, ~limit_i & input_valid_i};
+                    next_error_num_o = 3'b000;
+                end
+            end
+            confirm_psw_mode: begin
+                if (shuffle_released_i) begin // shuffle_released == 1. transition to shuffle mode
+                    next_state_o = shuffle_mode; 
+                    next_additional_state_o = {1'b1, confirm_psw_mode[1:0]};
+                    next_error_num_o = 3'b000;
+                end
+                else if (confirm_released_i) begin 
+                    if (same_i) begin // shuffle_released == 0, confirm_released == 1, same == 1. transition to locked mode
+                        next_state_o = locked_mode; 
+                        next_additional_state_o = 3'b100;
+                        next_error_num_o = 3'b000;
                     end
-
-                    else if (confirm_released) begin // shuffle == 0, confirm_released == 1, others: x (confirm_released has more priority than input_valid)
-                        // transition to confirm_psw mode, reset buffer
-                        cur_state <= confirm_psw_mode;
-                        prev_state <= cur_state;
-                        output_state <= buff_rst_output;
-                        error_num <= 4'b0000;
-                    end
-
-                    else begin // shuffle == 0, confirm_released == 0, others: x
-                        // stay in current (set_psw) mode, reset memory if i.v. and mem_limit, sl memeory if i.v. and !mem_limit
-                        cur_state <= cur_state;
-                        prev_state <= prev_state;
-                        output_state <= {input_valid & ~mem_limit, input_valid & mem_limit, 1'b0};
-                        error_num <= 4'b0000;
+                    else begin // shuffle_released == 0, confirm_released == 1, same == 0. transition to set_psw mode, reset mem
+                        next_state_o = set_psw_mode; 
+                        next_additional_state_o = 3'b110;
+                        next_error_num_o = 3'b000;
                     end
                 end
-
-                confirm_psw_mode: begin
-                    if (shuffle_released) begin // shuffle_released == 1, others: x
-                        // transition to shuffle mode, shuffle_init
-                        cur_state <= shuffle_mode;
-                        prev_state <= cur_state;
-                        output_state <= shuffle_init_output;
-                        error_num <= 4'b0000;
+                else if (input_valid_i) begin
+                    if (limit_i) begin // shuffle_released == 0, confirm_released == 0, i.v. == 1, limit == 1: reset mem and transition to set_psw
+                        next_state_o = set_psw_mode; 
+                        next_additional_state_o = 3'b110;
+                        next_error_num_o = 3'b000;
                     end
-
-                    else if (confirm_released) begin // shuffle_released == 0, confirm_released == 1, others: x
-                        // confirm_released has higher priority than input_valid 
-                        if (same) begin // shuffle_released == 0, confirm_released == 1, same == 1, others: x
-                            // transition to locked mode, no output
-                            cur_state <= locked_mode;
-                            prev_state <= cur_state;
-                            output_state <= allzero_outputs;
-                            error_num <= 4'b0000;
-                        end
-                        else begin // shuffle_released == 0, confirm_released == 1, same == 0, others: x
-                            // transition to set_psw mode, reset memory
-                            cur_state <= set_psw_mode;
-                            prev_state <= cur_state;
-                            output_state <= mem_rst_output;
-                            error_num <= 4'b0000;
-                        end
-                    end
-
-                    else begin // shuffle_released ==0, confirm_released == 0, others: x
-                        // stay in current(confirm_psw) mode, reset buffer if i.v. & buff_limit, sl buffer if i.v. & !buff_limit
-                        cur_state <= cur_state;
-                        prev_state <= prev_state;
-                        output_state <= {input_valid & ~buff_limit, input_valid & buff_limit, 1'b1};
-                        error_num <= 4'b0000;
+                    else begin // shuffle_released == 0, confirm_released == 0, i.v. == 1, limit == 0: shift left buffer
+                        next_state_o = confirm_psw_mode; 
+                        next_additional_state_o = 3'b001;
+                        next_error_num_o = 3'b000;
                     end
                 end
-
-                shuffle_mode: begin
-                    if (clk_count == 32'b1010) begin // clk_count == 10, others: x
-                        // transition to previous mode, no output
-                        prev_state <= cur_state;
-                        cur_state <= prev_state;
-                        output_state <= allzero_outputs;
-                        error_num <= error_num;
+                else begin // shuffle_released == 0, confirm_released == 0, i.v. == 0. 
+                    next_state_o = confirm_psw_mode; 
+                    next_additional_state_o = 3'b000;
+                    next_error_num_o = 3'b000;
+                end
+            end
+            locked_mode: begin
+                if (confirm_released_i) begin
+                    next_state_o = challenge_mode; 
+                    next_additional_state_o = 3'b110;
+                    next_error_num_o = cur_error_num_i;
+                end
+                else begin
+                    next_state_o = locked_mode; 
+                    next_additional_state_o = 3'b000;
+                    next_error_num_o = cur_error_num_i;
+                end
+            end
+            challenge_mode: begin
+                if (shuffle_released_i) begin // shuffle_released == 1. transition to shuffle mode
+                    next_state_o = shuffle_mode; 
+                    next_additional_state_o = {1'b1, challenge_mode[1:0]};
+                    next_error_num_o = cur_error_num_i;
+                end
+                else if (confirm_released_i) begin
+                    if ((same_i & (cur_error_num_i != 4'b1010)) | master_same_i) begin // shuffle_released == 0, confirm_released == 1, same == 1. transition to unlocked mode
+                        next_state_o = unlocked_mode; 
+                        next_additional_state_o = 3'b100;
+                        next_error_num_o = 3'b000;
                     end
-                    else begin // clk_count != 0, others: x
-                        // stay in current(shuffle) mode, no output
-                        prev_state <= prev_state;
-                        cur_state <= cur_state;
-                        output_state <= allzero_outputs;
-                        error_num <= error_num;
+                    else begin // shuffle_released == 0, confirm_released == 1, wrong. transition to locked mode and increment error count
+                        next_state_o = locked_mode; 
+                        next_additional_state_o = 3'b100;
+                        if (cur_error_num_i != 4'b1010) next_error_num_o = cur_error_num_i + 1;
+                        else next_error_num_o = 4'b1010;
                     end
                 end
-
-                locked_mode: begin
-                    if (confirm_released) begin // confirm_released == 1, others: x
-                        // transition to challenge_mode, reset buffer
-                        cur_state <= challenge_mode;
-                        prev_state <= cur_state;
-                        output_state <= buff_rst_output;
-                        error_num <= error_num;
+                else if (input_valid_i) begin
+                    if (limit_i) begin // shuffle == 0, confirm == 0, i.v. == 1, limit == 1. transition to locked mode and increment error count
+                        next_state_o = locked_mode; 
+                        next_additional_state_o = 3'b100;
+                        if (cur_error_num_i != 4'b1010) next_error_num_o = cur_error_num_i + 1;
+                        else next_error_num_o = 4'b1010;
                     end
-                    else begin // confirm_released == 0, others: x
-                        // stay in current (locked) mode, no output
-                        cur_state <= cur_state;
-                        prev_state <= prev_state;
-                        output_state <= allzero_outputs;
-                        error_num <= error_num;
+                    else begin // shuffle == 0, confirm == 0, i.i. == 1, limit == 0. stay in challenge mode and shift left buffer
+                        next_state_o = challenge_mode;
+                        next_additional_state_o = 3'b001;
+                        next_error_num_o = cur_error_num_i;
                     end
                 end
-
-                challenge_mode: begin
-                    if (shuffle_released) begin // shuffle_released == 1, others: x
-                        // transition to shuffle mode, shuffle init
-                        cur_state <= shuffle_mode;
-                        prev_state <= cur_state;
-                        output_state <= shuffle_init_output;
-                        error_num <= error_num;
-                    end
-                    else if (confirm_released) begin // shuffle_released == 0, confirm_released == 1, others: x
-                        if ((same & (error_num != error_limit)) | master_same) begin 
-                            // transition to unlocked mode, no output
-                            cur_state <= unlocked_mode;
-                            prev_state <= cur_state;
-                            output_state <= allzero_outputs;
-                            error_num <= 4'b0000;
-                        end
-                        else begin
-                            // transition to locked mode, no output
-                            cur_state <= locked_mode;
-                            prev_state <= cur_state;
-                            output_state <= allzero_outputs;
-                            if (error_num == error_limit) error_num <= error_num;
-                            else error_num <= error_num + 1;
-                        end
-                    end
-                    else if (input_valid) begin // shuffle_released == 0, confirm_released == 0, input_valid == 1, others: x
-                        if (buff_limit) begin // shuffle_released == 0, confirm_released == 0, input_valid == 1, limit == 1, others: x
-                            // transition to locked mode, no output
-                            cur_state <= locked_mode;
-                            prev_state <= cur_state;
-                            output_state <= allzero_outputs;
-                            if (error_num == error_limit) error_num <= error_num;
-                            else error_num <= error_num + 1;
-                        end
-                        else begin // shuffle_released == 0, confirm_released == 0, input_valid == 1, limit == 0, others: x
-                            // stay in current (challenge) mode, shift left buffer
-                            cur_state <= cur_state;
-                            prev_state <= prev_state;
-                            output_state <= buff_sl_output;
-                            error_num <= error_num;
-                        end
-                    end
-                    else begin // shuffle_released == 0, confirm_released == 0, input_valid == 0, others: x
-                        // stay in current (challenge) mode, no output
-                        cur_state <= cur_state;
-                        prev_state <= prev_state;
-                        output_state <= allzero_outputs;
-                        error_num <= error_num;
-                    end
+                else begin // shuffle == 0, confirm == 0, i.v. == 0. stay in challenge mode
+                    next_state_o = challenge_mode;
+                    next_additional_state_o = 3'b000;
+                    next_error_num_o = cur_error_num_i;
                 end
-                unlocked_mode: begin
-                    if (confirm_released) begin
-                        if (clk_count < 32'b1011011100011011000000) begin // confirm_released == 1, clk_count < 3seconds, others: x
-                            // transition to locked mode, no output
-                            cur_state <= locked_mode;
-                            prev_state <= cur_state;
-                            output_state <= allzero_outputs;
-                            error_num <= 4'b0000;
-                        end
-                        else begin // confirm_released == 0, clk_count > 3seconds, others: x
-                            // transition to set_psw mode, reset memory
-                            cur_state <= set_psw_mode;
-                            prev_state <= cur_state;
-                            output_state <= mem_rst_output;
-                            error_num <= 4'b0000;
-                        end
+            end
+            unlocked_mode: begin
+                if (confirm_released_i) begin 
+                    if (clk_count_i < 32'b1010) begin
+                        next_state_o = locked_mode; // confirm_released == 1, clk_count (confirm hold time) < 10(for simulation, in reality it should be 3e6 or something). transition to locked mode
+                        next_additional_state_o = 3'b100;
+                        next_error_num_o = 3'b000;
                     end
                     else begin
-                        // stay in current (unlocked) mode, no output
-                        cur_state <= cur_state;
-                        prev_state <= prev_state;
-                        output_state <= allzero_outputs;
-                        error_num <= 4'b0000;
+                        next_state_o = set_psw_mode; // confirm_released == 1, clk_count >=10 transition to set_psw mode, reset mem
+                        next_additional_state_o = 3'b110;
+                        next_error_num_o = 3'b000;
                     end
                 end
-            endcase
+                else begin // confirm_released == 0. stay in unlocked mode
+                    next_state_o = unlocked_mode;
+                    next_additional_state_o = 3'b000;
+                    next_error_num_o = 3'b000;
+                end
+            end
+
+            shuffle_mode: begin
+                if (clk_count_i == 32'b1010) begin
+                    next_state_o = {1'b0, next_additional_state_o[1:0]};
+                    next_additional_state_o = 3'b100;
+                    next_error_num_o = cur_error_num_i;
+                end
+                else begin
+                    next_state_o = next_state_o;
+                    next_additional_state_o = {1'b0, next_additional_state_o[1:0]};
+                    next_error_num_o = cur_error_num_i;
+                end
+            end
+            default: begin
+                next_state_o = 3'b000;
+                next_additional_state_o = 3'b000;
+                next_error_num_o = 4'b0000;
+            end
+        endcase
+    end
+endmodule
+
+module CurStateRegisters(
+    input [2:0] next_state_i,
+    input [2:0] next_additional_state_i,
+    input [3:0] next_error_num_i,
+    
+    input clk_i,
+    input nreset_i,
+
+    output reg [2:0] state_o,
+    output reg [2:0] additional_state_o,
+    output reg [3:0] error_num_o
+    );
+
+    always @(negedge clk_i or negedge nreset_i) begin
+        if (~nreset_i) begin
+            state_o <= 3'b000;
+            additional_state_o <= 3'b000;
+            error_num_o <= 4'b0000;
+        end
+        else begin
+            state_o <= next_state_i;
+            additional_state_o <= next_additional_state_i;
+            error_num_o <= next_error_num_i;
         end
     end
 endmodule
 
-module ControllerClkCounter(
-    input clk, 
-    input rstn,
-    input [2:0] cur_state,
-    input shuffle_in,
-    input confirm_in,
-    
-    output reg [31:0] clk_count
+module OutputComb(
+    input [2:0] state_i,
+    input [2:0] additional_state_i,
+    input [31:0] clk_count_i,
+
+    output [31:0] seed_o, 
+    output shuffle_init_o,
+    output mem_rst_o,
+    output mem_sl_o,
+    output buff_rst_o,
+    output buff_sl_o
+
     );
 
-    // counter enable/reset circuit + counter
+    wire write_to_mem, write_to_buff;
 
     localparam [2:0] noop_mode = 3'b000;
     localparam [2:0] set_psw_mode = 3'b001;
     localparam [2:0] confirm_psw_mode = 3'b010;
-    localparam [2:0] shuffle_mode = 3'b011;
-    localparam [2:0] locked_mode = 3'b100;
-    localparam [2:0] challenge_mode = 3'b101;
+    localparam [2:0] challenge_mode = 3'b011;
+    localparam [2:0] shuffle_mode = 3'b100;
+    localparam [2:0] locked_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
-    always @(posedge clk or negedge rstn) begin
-        if (~rstn) clk_count <= 32'b0;
-        else begin
-            case (cur_state) 
-                noop_mode: clk_count <= 32'b0;
-                set_psw_mode: clk_count <= clk_count + {31'b0, shuffle_in};
-                confirm_psw_mode: clk_count <= clk_count + {31'b0, shuffle_in};
-                shuffle_mode: clk_count <= clk_count + 1;
-                locked_mode: clk_count <= 32'b0;
-                challenge_mode: clk_count <= clk_count + {31'b0, shuffle_in};
-                unlocked_mode: clk_count <= clk_count + {31'b0, confirm_in};
-            endcase
-        end
-    end
+    assign write_to_mem = state_i == set_psw_mode;
+    assign write_to_buff = state_i[2:1] == 2'b01; // state_i == confirm_psw_mode | state_i == challenge_mode
+
+    assign seed_o = clk_count_i;
+    assign shuffle_init_o = (state_i == shuffle_mode) & additional_state_i[2];
+    assign mem_rst_o = write_to_mem & additional_state_i[1];
+    assign mem_sl_o = write_to_mem & additional_state_i[0];
+    assign buff_rst_o = write_to_buff & additional_state_i[1];
+    assign buff_sl_o = write_to_buff & additional_state_i[0];
 
 endmodule
     
-module ControllerOutputDecoder(
-    input [2:0] output_state,
-    input [31:0] clk_count,
-    input [2:0] cur_state,
+module ClkCounterEnableComb(
+    input [2:0] state_i,
+    input [2:0] additional_state_i,
+    input confirm_in_i,
+    input shuffle_in_i,
 
-    output shuffle_init, 
-    output [31:0] seed, 
-    output decision, 
-    output mem_sl, 
-    output buff_sl, 
-    output mem_rst,
-    output buff_rst
+    output reg count_en_o,
+    output count_rst_o
     );
 
-    localparam [2:0] allzero_outputs = 3'b000;
-    localparam [2:0] shuffle_init_output = 3'b111;
-    localparam [2:0] mem_rst_output = 3'b010;
-    localparam [2:0] buff_rst_output = 3'b011;
-    localparam [2:0] mem_sl_output = 3'b100;
-    localparam [2:0] buff_sl_output = 3'b101;
-
+    localparam [2:0] noop_mode = 3'b000;
     localparam [2:0] set_psw_mode = 3'b001;
+    localparam [2:0] confirm_psw_mode = 3'b010;
+    localparam [2:0] challenge_mode = 3'b011;
+    localparam [2:0] shuffle_mode = 3'b100;
+    localparam [2:0] locked_mode = 3'b101;
+    localparam [2:0] unlocked_mode = 3'b110;
 
-    // output combinational circuit
-    assign seed = clk_count;
-    assign decision = cur_state == set_psw_mode;
-    assign shuffle_init = output_state == shuffle_init_output;
-    assign mem_rst = output_state == mem_rst_output;
-    assign buff_rst = output_state == buff_rst_output;
-    assign buff_sl = output_state == buff_sl_output;
-    assign mem_sl = output_state == mem_sl_output;
-
+    assign count_rst_o = additional_state_i[2];
+    always @(*) begin
+        case (state_i)
+            shuffle_mode: count_en_o = 1;
+            confirm_psw_mode: count_en_o = shuffle_in_i;
+            challenge_mode: count_en_o = shuffle_in_i;
+            set_psw_mode: count_en_o = shuffle_in_i;
+            unlocked_mode: count_en_o = confirm_in_i;
+            default: count_en_o = 0;
+        endcase
+    end
 endmodule
 
 
-                    
+module ClkCounter(/*AUTOARG*/ // former 'clk_control'
+    // Outputs
+    clk_num,
+    // Inputs
+    clk, clk_num_rst, enable, rstn
+    );
+    input clk;
+    input clk_num_rst; // synchronous reset at 1
+    input enable;
+    input rstn; // asynchronous reset at 0
+    output reg [31:0] clk_num; // = 0; 
 
+    always @(posedge clk or negedge rstn) begin
+        if (~rstn) clk_num <= 32'b0; // priority: rstn > clk_num_rst > enable
+        else if (clk_num_rst) clk_num <= 32'b0;
+        else if (enable) clk_num <= clk_num + 1;
+        else clk_num <= clk_num;
+    end
 
-
-
-                        
-                        
-                        
+   
+endmodule // clk_control 
 
