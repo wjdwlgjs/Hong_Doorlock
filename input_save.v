@@ -34,7 +34,7 @@ module input_save(
         data_out <= saver;
     end */
 
-    assign buff_limit = saver[127:124] == 4'b1111;
+    assign buff_limit = saver[127:124] != 4'b1111;
     assign data_out = saver;
 
 endmodule

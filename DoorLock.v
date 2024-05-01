@@ -2,7 +2,7 @@
 `include "reged_pw.v"
 `include "display_reg.v"
 `include "Comparators.v"
-`include "Controller.v"
+`include "Head.v"
 `include "input_save.v"
 
 module DoorLock(
@@ -23,8 +23,8 @@ module DoorLock(
     wire [3:0] digit_button_input_index;
     wire [127:0] master_psw, input_buffer, psw_memory;
     wire [3:0] actual_button_input;
-
-    assign master_psw = 128'hDDDDFFFFEEEEAAAABBBBDADAEFEFBBBB;
+    
+    assign master_psw = 128'hffffffffffffffffffffffffffff2718;
 
     button_reg ButtonsEncoder(
         .index(digit_button_input_index),

@@ -25,7 +25,7 @@ always @(posedge clk or negedge rstn) begin
     
     else if (mem_sl) begin
         // Operate only when both A and B are 1
-        register <= {register[123:0], 4'b0000};
+        register <= {register[123:0], data_in};
     
     end
 
@@ -35,5 +35,7 @@ end
 always @(*) begin
     data_out1 = register; // Continuously output the current state of the register
 end
+
+assign mem_limit = (register[127:124] != 4'b1111);
 
 endmodule

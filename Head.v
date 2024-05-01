@@ -1,5 +1,4 @@
 `include "button_release_detector.v"
-`include "clk_control.v"
 
 module ControlUnit(
     input confirm_i,
@@ -15,11 +14,11 @@ module ControlUnit(
 
     output [31:0] clk_count_o,
     output shuffle_init_o,
-    output write_to_mem_o, // former 'decision' write to buffer if 0
     output mem_rst_o,
     output mem_sl_o,
     output buff_rst_o,
-    output buff_sl_o
+    output buff_sl_o, 
+    output locked_o
     );
 
     wire [2:0] cur_state, next_state;
@@ -49,7 +48,8 @@ module ControlUnit(
         .same_i(same_i),
         .master_same_i(master_same_i), 
         .input_valid_i(input_valid_i),
-        .limit_i(mem_limit_i & write_to_mem | buff_limit_i & write_to_buff),
+        .buff_limit_i(buff_limit_i),
+        .mem_limit_i(mem_limit_i),
         .clk_count_i(clk_count_o),
 
         .cur_state_i(cur_state),
@@ -83,7 +83,8 @@ module ControlUnit(
         .mem_rst_o(mem_rst_o),
         .mem_sl_o(mem_sl_o),
         .buff_rst_o(buff_rst_o),
-        .buff_sl_o(buff_sl_o)
+        .buff_sl_o(buff_sl_o),
+        .locked_o(locked_o)
     );
 
     ClkCounterEnableComb CounterEnCombUnit(
@@ -113,7 +114,8 @@ module NextStateComb(
     input same_i,
     input master_same_i, 
     input input_valid_i,
-    input limit_i,
+    input buff_limit_i,
+    input mem_limit_i,
     input [31:0] clk_count_i,
 
     input [2:0] cur_state_i,
@@ -135,8 +137,11 @@ module NextStateComb(
     localparam [2:0] locked_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
+    localparam [31:0] long_confirm_threshold = 32'd80; // for simulation. This gotta be something like 3e6 or something in real life
+    localparam [31:0] shuffle_sequence_duration = 32'd9;
+
     always @(*) begin
-        case(next_state_o) 
+        case(cur_state_i) 
             noop_mode: begin
                 next_state_o = set_psw_mode;
                 next_additional_state_o = 3'b100;
@@ -155,7 +160,7 @@ module NextStateComb(
                 end
                 else begin // shuffle_released == 0, confirm_released  == 0, reset mem if i.v. & limit, sl mem if i.v. & ~limit
                     next_state_o = set_psw_mode;
-                    next_additional_state_o = {1'b0, limit_i & input_valid_i, ~limit_i & input_valid_i};
+                    next_additional_state_o = {1'b0, mem_limit_i & input_valid_i, ~mem_limit_i & input_valid_i};
                     next_error_num_o = 3'b000;
                 end
             end
@@ -178,7 +183,7 @@ module NextStateComb(
                     end
                 end
                 else if (input_valid_i) begin
-                    if (limit_i) begin // shuffle_released == 0, confirm_released == 0, i.v. == 1, limit == 1: reset mem and transition to set_psw
+                    if (buff_limit_i) begin // shuffle_released == 0, confirm_released == 0, i.v. == 1, limit == 1: reset mem and transition to set_psw
                         next_state_o = set_psw_mode; 
                         next_additional_state_o = 3'b110;
                         next_error_num_o = 3'b000;
@@ -227,7 +232,7 @@ module NextStateComb(
                     end
                 end
                 else if (input_valid_i) begin
-                    if (limit_i) begin // shuffle == 0, confirm == 0, i.v. == 1, limit == 1. transition to locked mode and increment error count
+                    if (buff_limit_i) begin // shuffle == 0, confirm == 0, i.v. == 1, limit == 1. transition to locked mode and increment error count
                         next_state_o = locked_mode; 
                         next_additional_state_o = 3'b100;
                         if (cur_error_num_i != 4'b1010) next_error_num_o = cur_error_num_i + 1;
@@ -248,7 +253,7 @@ module NextStateComb(
             unlocked_mode: begin
                 if (confirm_released_i) begin 
                     if (clk_count_i < 32'b1010) begin
-                        next_state_o = locked_mode; // confirm_released == 1, clk_count (confirm hold time) < 10(for simulation, in reality it should be 3e6 or something). transition to locked mode
+                        next_state_o = locked_mode; // confirm_released == 1, clk_count (confirm hold time) < long_confirm_threshold. transition to locked mode
                         next_additional_state_o = 3'b100;
                         next_error_num_o = 3'b000;
                     end
@@ -266,7 +271,7 @@ module NextStateComb(
             end
 
             shuffle_mode: begin
-                if (clk_count_i == 32'b1010) begin
+                if (clk_count_i == shuffle_sequence_duration) begin
                     next_state_o = {1'b0, next_additional_state_o[1:0]};
                     next_additional_state_o = 3'b100;
                     next_error_num_o = cur_error_num_i;
@@ -322,7 +327,8 @@ module OutputComb(
     output mem_rst_o,
     output mem_sl_o,
     output buff_rst_o,
-    output buff_sl_o
+    output buff_sl_o,
+    output locked_o
     );
 
     localparam [2:0] noop_mode = 3'b000;
@@ -342,6 +348,7 @@ module OutputComb(
     assign mem_sl_o = mem_write & additional_state_i[0];
     assign buff_rst_o = buff_write & additional_state_i[1];
     assign buff_sl_o = buff_write & additional_state_i[0];
+    assign locked_o = state_i == locked_mode;
 
 endmodule
     

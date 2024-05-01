@@ -1,4 +1,4 @@
-`include "Controller.v"
+/* `include "Controller.v"
 `timescale 1ns/1ns
 
 module tb_Controller();
@@ -150,3 +150,4 @@ module tb_Controller();
         
 
 
+ */
