@@ -16,8 +16,10 @@ module ControlUnit(
     output [31:0] clk_count_o,
     output shuffle_init_o,
     output write_to_mem_o, // former 'decision' write to buffer if 0
-    output input_rst_o,
-    output input_sl_o
+    output mem_rst_o,
+    output mem_sl_o,
+    output buff_rst_o,
+    output buff_sl_o
     );
 
     wire [2:0] cur_state, next_state;
@@ -78,9 +80,10 @@ module ControlUnit(
         .clk_count_i(clk_count_o),
 
         .shuffle_init_o(shuffle_init_o),
-        .write_to_mem_o(write_to_mem_o),
-        .input_rst_o(input_rst_o),
-        .input_sl_o(input_sl_o)
+        .mem_rst_o(mem_rst_o),
+        .mem_sl_o(mem_sl_o),
+        .buff_rst_o(buff_rst_o),
+        .buff_sl_o(buff_sl_o)
     );
 
     ClkCounterEnableComb CounterEnCombUnit(
@@ -316,10 +319,10 @@ module OutputComb(
     input [31:0] clk_count_i,
 
     output shuffle_init_o,
-    output write_to_mem_o,
-    output input_rst_o,
-    output input_sl_o
-
+    output mem_rst_o,
+    output mem_sl_o,
+    output buff_rst_o,
+    output buff_sl_o
     );
 
     localparam [2:0] noop_mode = 3'b000;
@@ -330,12 +333,15 @@ module OutputComb(
     localparam [2:0] locked_mode = 3'b101;
     localparam [2:0] unlocked_mode = 3'b110;
 
-    wire write_input;
-    assign write_to_mem_o = (state_i == set_psw_mode);
-    assign write_input = write_to_mem_o & (state_i[2:1] == 2'b01);
+    wire mem_write, buff_write;
 
-    assign input_rst_o = additional_state_i[1] & write_input;
-    assign input_sl_o = additional_state_i[0] & write_input;
+    assign mem_write = state_i == set_psw_mode;
+    assign buff_write = state_i[2:1] == 2'b01;
+
+    assign mem_rst_o = mem_write & additional_state_i[1];
+    assign mem_sl_o = mem_write & additional_state_i[0];
+    assign buff_rst_o = buff_write & additional_state_i[1];
+    assign buff_sl_o = buff_write & additional_state_i[0];
 
 endmodule
     
