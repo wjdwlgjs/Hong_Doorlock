@@ -38,7 +38,10 @@ module button_reg(/*AUTOARG*/
     // i.v. _______|     |___________________________________________________
     
     always @(posedge clk or negedge rstn) begin
-        if (~rstn) input_v <= 0;
+        if (~rstn) begin
+            input_v <= 0;
+            iv_output_done <= 0;
+        end
         else if (any_input_active) begin
             if (~iv_output_done) begin
                 input_v <= 1;
