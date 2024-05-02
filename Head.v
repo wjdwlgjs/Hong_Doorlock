@@ -1,3 +1,29 @@
+// We can expect the realized hardware to look something like this:
+//
+//                                 ____________________________ all current states
+//                                |                            |
+//                        ________v________             _______|________              ________________
+//                       |                 |           |                |            |                |
+//       all inputs      |   next state    |---------->|   state,       |----------->|   output       |
+//              -------->|  combinational  |---------->|   prev_state,  |            | combinational  |----> (almost)
+//                       |     circuit     |---------->|   error_num,   |            |     circuit    |       all outputs
+//                       |                 |---------->|   additional_  |----------->|                |
+//                       |                 |   next    |   state        |    state,  |                |
+//                       |_________________|  states   |________________| additional |________________|
+//                                                             |
+//                                                             | state,
+//                                                             | additional
+//                                                      _______v________              ________________
+//                                                     |                |            |                |
+//                                                     |                |            |                |--->clk_count
+//                                                     |    counter     |----------->|   clk          |
+//                                                     |    enable      |  enable    |   counter      |
+//                                                     | combinational  |----------->|                |
+//                                                     |     circuit    | reset      |                |
+//                                                     |________________|            |________________|
+//
+
+
 `include "button_release_detector.v"
 
 module ControlUnit(
@@ -77,7 +103,6 @@ module ControlUnit(
     OutputComb OutputCombUnit(
         .state_i(cur_state),
         .additional_state_i(cur_additional_state),
-        .clk_count_i(clk_count_o),
 
         .shuffle_init_o(shuffle_init_o),
         .mem_rst_o(mem_rst_o),
@@ -321,7 +346,6 @@ endmodule
 module OutputComb(
     input [2:0] state_i,
     input [2:0] additional_state_i,
-    input [31:0] clk_count_i,
 
     output shuffle_init_o,
     output mem_rst_o,
