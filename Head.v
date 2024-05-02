@@ -381,6 +381,7 @@ module OutputComb(
                 else locked_o = 0;
             end
             locked_mode: locked_o = 1;
+            challenge_mode: locked_o = 1;
             default: locked_o = 0;
         endcase
     end
