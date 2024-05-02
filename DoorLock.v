@@ -89,7 +89,8 @@ module DoorLock(
         .mem_rst_o(mem_rst),
         .mem_sl_o(mem_sl),
         .buff_rst_o(buff_rst),
-        .buff_sl_o(buff_sl)
+        .buff_sl_o(buff_sl),
+        .locked_o(locked)
     );
 
 endmodule

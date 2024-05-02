@@ -343,7 +343,8 @@ module OutputComb(
 
     assign mem_write = state_i == set_psw_mode;
     assign buff_write = state_i[2:1] == 2'b01;
-
+    
+    assign shuffle_init_o = (state_i == shuffle_mode) & additional_state_i[2];
     assign mem_rst_o = mem_write & additional_state_i[1];
     assign mem_sl_o = mem_write & additional_state_i[0];
     assign buff_rst_o = buff_write & additional_state_i[1];

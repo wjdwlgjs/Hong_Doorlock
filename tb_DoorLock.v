@@ -178,10 +178,16 @@ module tb_DoorLock();
         #296
         tb_confirm_button <= 0;
 
+        // short confirm to lock again
+        #232
+        tb_confirm_button <= 1;
+        #48
+        tb_confirm_button <= 0;
+
         // now can open with 6969
         #232
         tb_confirm_button <= 1;
-        #296
+        #48
         tb_confirm_button <= 0;
         #240
         tb_digit_buttons[6] <= 1;
@@ -199,7 +205,7 @@ module tb_DoorLock();
         // short confirm to lock
         #231
         tb_confirm_button <= 1;
-        #275
+        #48
         tb_confirm_button <= 0;
 
         // open with 6969 again
