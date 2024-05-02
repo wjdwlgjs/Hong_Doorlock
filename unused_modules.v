@@ -1,4 +1,80 @@
-`include "button_1bit_neg.v"
+module button(/*autoarg*/
+   // Outputs
+   out,
+   // Inputs
+   clk, in
+   );
+   input clk;
+   input [9:0] in;
+   output reg [9:0] out;
+
+   reg		prev = 0;
+   wire		total;
+
+   assign total = in[0]|in[1]|in[2]|in[3]|in[4]|in[5]|in[6]|in[7]|in[8]|in[9];
+   
+   always @(posedge clk) begin
+      if (prev==0) begin
+	 if (total == 1) begin
+	    out <= in;
+	 end
+	 else begin
+	    out <= 10'd0;
+	 end
+      end
+      else begin
+	 out <= 10'd0;
+      end // else: !if(prev==0)
+      prev <= total;
+      
+   end
+
+
+endmodule // button
+
+module confirm(
+    input wire clk,
+    input wire star,
+    output reg confirm=0,
+    output reg long_confirm=0
+    );
+
+    reg prev = 0;
+
+    confirm_clk_counter i0 (/*AUTOINST*/
+        // Outputs
+        .long_valid(long_valid),
+        // Inputs
+        .clk(clk),
+        .star(star)
+    );
+
+    always @ (posedge clk) begin
+        if (prev == 1) begin
+        if (star == 0) begin
+         if (long_valid == 0) begin
+             confirm <= 1;
+             long_confirm <=0;
+         end
+         else begin
+             confirm <= 0;
+             long_confirm <= 1;
+         end
+     end
+     
+     else begin
+         confirm <= 0;
+         long_confirm <= 0;
+     end
+        end
+        else begin
+     confirm <= 0;
+     long_confirm <= 0;
+        end
+        prev <= star;
+    end
+
+endmodule // confirm
 
 module control_test(/*autoarg*/
     // Outputs
@@ -136,3 +212,66 @@ module control_test(/*autoarg*/
     end   
 
 endmodule // control_test
+
+module DigitsButtons(/*autoarg*/
+   // Outputs
+   out,
+   // Inputs
+   clk, in
+   );
+   input clk;
+   input [9:0] in;
+   output reg [9:0] out;
+
+   reg		prev = 0;
+   wire		total;
+
+   assign total = in[0]|in[1]|in[2]|in[3]|in[4]|in[5]|in[6]|in[7]|in[8]|in[9];
+   
+   always @(posedge clk) begin
+      if (prev==0) begin
+	 if (total == 1) begin
+	    out <= in;
+	 end
+	 else begin
+	    out <= 10'd0;
+	 end
+      end
+      else begin
+	 out <= 10'd0;
+      end // else: !if(prev==0)
+      prev <= total;
+      
+   end
+
+
+endmodule // button
+
+module dis_clk_counter(
+    input wire clk,
+    input wire shuffle_init,
+    output reg [3:0] count_out
+    );
+
+    // Counter variable
+    reg [3:0] count = 0;
+
+    // Count logic
+    always @(posedge clk) begin
+        if (shuffle_init) begin
+            if (count < 10) begin
+                count = count + 1; // Increment counter if below maximum
+            end
+        end 
+        else begin
+            count = 0; // Reset counter when A is low
+        end
+    end
+
+    // Output assignment
+    always @(negedge clk) begin
+        count_out <= count; // Update output with current count
+    end
+
+endmodule
+

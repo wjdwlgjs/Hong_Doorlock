@@ -1,6 +1,6 @@
 // compares the input and the master password
 
-module master_comparator(/*AUTOARG*/
+/* module master_comparator(
     // Outputs
     master_same,
     // Inputs
@@ -20,7 +20,7 @@ module master_comparator(/*AUTOARG*/
             master_same = 0;
         end
     end
-endmodule
+endmodule */
 
 module Comparators(
     // Outputs
