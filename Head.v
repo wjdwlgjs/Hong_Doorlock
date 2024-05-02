@@ -44,7 +44,8 @@ module ControlUnit(
     output mem_sl_o,
     output buff_rst_o,
     output buff_sl_o, 
-    output locked_o
+    output locked_o,
+    output clk_halt_o
     );
 
     wire [2:0] cur_state, next_state;
@@ -128,6 +129,13 @@ module ControlUnit(
         .enable(count_en),
         .clk_num_rst(count_rst),
         .rstn(nreset_i)
+    );
+
+    NegedgeDFF ClkPowerManager(
+        .d_i(1'b1),
+        .enable_i(cur_state == 3'b101 & cur_additional_state[2]),
+        .nreset_i(~confirm_i & nreset_i),
+        .q_o(clk_halt_o)
     );
 
 endmodule
@@ -443,3 +451,16 @@ module ClkCounter(/*AUTOARG*/ // former 'clk_control'
    
 endmodule // clk_control 
 
+module NegedgeDFF(
+    input d_i,
+    input enable_i,
+    input nreset_i,
+
+    output reg q_o
+    );
+
+    always @(negedge enable_i or negedge nreset_i) begin
+        if (~nreset_i) q_o <= 0;
+        else q_o <= d_i;
+    end
+endmodule

@@ -151,7 +151,7 @@ module display_reg(
             4'b0111: data_out = register[31:28];
             4'b1000: data_out = register[35:32];
             4'b1001: data_out = register[39:36];
-            default: data_out = 4'b0000;
+            default: data_out = 4'b1111;
         endcase
     end
 

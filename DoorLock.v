@@ -13,7 +13,8 @@ module DoorLock(
     input clk,
     input rstn,
     
-    output locked
+    output locked,
+    output clk_halt
     );
 
     wire same, master_same, input_valid, buff_limit, mem_limit;
@@ -88,9 +89,10 @@ module DoorLock(
         .shuffle_init_o(shuffle_init),
         .mem_rst_o(mem_rst),
         .mem_sl_o(mem_sl),
-        .buff_rst_o(buff_rst),
+        .buff_rst_o(buff_rst), 
         .buff_sl_o(buff_sl),
-        .locked_o(locked)
+        .locked_o(locked),
+        .clk_halt_o(clk_halt)
     );
 
 endmodule

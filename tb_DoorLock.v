@@ -11,8 +11,12 @@ module tb_DoorLock();
     reg tb_rstn;
     
     wire tb_locked;
+    wire tb_clk_halt;
 
-    always #5 tb_clk <= ~tb_clk;
+    always #5 begin
+        if (tb_clk_halt) tb_clk <= 0;
+        else tb_clk <= ~tb_clk;
+    end
     /* always @(posedge tb_confirm_button) #48 tb_confirm_button <= 0;
     always @(posedge tb_shuffle_button) #48 tb_shuffle_button <= 0; */
     always @(posedge tb_digit_buttons[0]) #48 tb_digit_buttons[0] <= 0;
@@ -34,7 +38,8 @@ module tb_DoorLock();
         .clk(tb_clk),
         .rstn(tb_rstn),
 
-        .locked(tb_locked)
+        .locked(tb_locked),
+        .clk_halt(tb_clk_halt)
     );
 
     initial begin
@@ -60,15 +65,15 @@ module tb_DoorLock();
             #144;
         end
             
-        // set psw to 6969
+        // set psw to 1234
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
@@ -76,41 +81,41 @@ module tb_DoorLock();
 
         // wrong confirm psw
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #144
-        tb_digit_buttons[8] <= 1;
+        tb_digit_buttons[3] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
         tb_confirm_button <= 0;
 
-        // set psw to 6969 again
+        // set psw to 1234 again
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
         tb_confirm_button <= 0;
 
-        // confirm psw 6969
+        // confirm psw 1234
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
@@ -142,19 +147,19 @@ module tb_DoorLock();
             tb_confirm_button <= 0;
         end
 
-        // now can't open with 6969
+        // now can't open with 1234
         #232
         tb_confirm_button <= 1;
         #296
         tb_confirm_button <= 0;
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
@@ -184,19 +189,19 @@ module tb_DoorLock();
         #48
         tb_confirm_button <= 0;
 
-        // now can open with 6969
+        // now can open with 1234
         #232
         tb_confirm_button <= 1;
         #48
         tb_confirm_button <= 0;
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
@@ -208,19 +213,19 @@ module tb_DoorLock();
         #48
         tb_confirm_button <= 0;
 
-        // open with 6969 again
+        // open with 1234 again
         #232
         tb_confirm_button <= 1;
         #296
         tb_confirm_button <= 0;
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
@@ -240,15 +245,15 @@ module tb_DoorLock();
 
         #1200
 
-        // 6969 isn't really 6969 anymore
+        // 1234 isn't really 1234 anymore
         #240
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[1] <= 1;
         #144
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[2] <= 1;
         #290
-        tb_digit_buttons[6] <= 1;
+        tb_digit_buttons[3] <= 1;
         #216
-        tb_digit_buttons[9] <= 1;
+        tb_digit_buttons[4] <= 1;
         #238
         tb_confirm_button <= 1;
         #116 
