@@ -352,7 +352,7 @@ module OutputComb(
     output mem_sl_o,
     output buff_rst_o,
     output buff_sl_o,
-    output locked_o
+    output reg locked_o
     );
 
     localparam [2:0] noop_mode = 3'b000;
@@ -373,7 +373,18 @@ module OutputComb(
     assign mem_sl_o = mem_write & additional_state_i[0];
     assign buff_rst_o = buff_write & additional_state_i[1];
     assign buff_sl_o = buff_write & additional_state_i[0];
-    assign locked_o = state_i == locked_mode;
+    
+    always @(*) begin
+        case(state_i) 
+            shuffle_mode: begin
+                if (additional_state_i[1:0] == 2'b11) locked_o = 1;
+                else locked_o = 0;
+            end
+            locked_mode: locked_o = 1;
+            default: locked_o = 0;
+        endcase
+    end
+
 
 endmodule
     

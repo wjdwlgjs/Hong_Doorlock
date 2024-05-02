@@ -214,33 +214,3 @@ module Modulo32to4Bit(
 
 endmodule
 
-module ReverseNineCounter(
-    input rstn,
-    input clk,
-    input enable,
-    output reg [3:0] count
-    );
-
-    always @(posedge clk or negedge rstn) begin
-        if (~rstn) count <= 0;
-        else begin
-            if (~enable) count <= count;
-            else begin
-                case(count)
-                    4'b1001: count <= 4'b1000;
-                    4'b1000: count <= 4'b111;
-                    4'b111: count <= 4'b110;
-                    4'b110: count <= 4'b101;
-                    4'b101: count <= 4'b100;
-                    4'b100: count <= 4'b11;
-                    4'b11: count <= 4'b10;
-                    4'b10: count <= 4'b1;
-                    4'b1: count <= 4'b0;
-                    4'b0: count <= 4'b1001;
-                    default: count <= 4'b1001;
-                endcase
-            end
-        end
-    end
-
-endmodule
